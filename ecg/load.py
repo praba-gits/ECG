@@ -40,7 +40,7 @@ class Preproc:
         return x
 
     def process_y(self, y):
-        y = pad([[self.class_to_int[c] for c in s] for s in y], val=3, dtype=np.int32)
+        y = pad([[self.class_to_int.get(c, 0) for c in s] for s in y], val=3, dtype=np.int32)
         y = keras.utils.to_categorical(y, num_classes=len(self.classes))
         return y
 
@@ -59,6 +59,9 @@ def compute_mean_std(x):
 
 
 def load_dataset(data_json):
+    if not os.path.exists(data_json):
+        raise FileNotFoundError(f"Error: {data_json} not found!")
+
     with open(data_json, 'r') as fid:
         data = [json.loads(l) for l in fid]
 
@@ -73,12 +76,19 @@ def load_dataset(data_json):
 
 
 def load_ecg(record):
-    ext = os.path.splitext(record)[1]
+    if not os.path.exists(record):
+        raise FileNotFoundError(f"ECG file not found: {record}")
+
+    ext = os.path.splitext(record)[1].lower()
 
     if ext == ".npy":
         ecg = np.load(record)
     elif ext == ".mat":
-        ecg = sio.loadmat(record)['val'].squeeze()
+        mat_data = sio.loadmat(record)
+        if 'val' in mat_data:
+            ecg = mat_data['val'].squeeze()
+        else:
+            raise ValueError(f"Unexpected format in MAT file: {record}")
     else:  # Assumes binary 16-bit integers
         with open(record, 'rb') as fid:  # Use 'rb' for binary mode
             ecg = np.fromfile(fid, dtype=np.int16)
@@ -88,11 +98,15 @@ def load_ecg(record):
 
 
 if __name__ == "__main__":
-    data_json = "examples/cinc17/train.json"
-    train = load_dataset(data_json)
-    preproc = Preproc(*train)
-    gen = data_generator(32, preproc, *train)
+    data_json = "/content/ECG/examples/cinc17/train.json"  # Ensure correct path
+    try:
+        train = load_dataset(data_json)
+        preproc = Preproc(*train)
+        gen = data_generator(32, preproc, *train)
 
-    for x, y in gen:
-        print(x.shape, y.shape)
-        break
+        for x, y in gen:
+            print(f"✅ Batch X Shape: {x.shape}, Batch Y Shape: {y.shape}")
+            print(f"🔍 First 5 Labels: {y[:5]}")
+            break
+    except Exception as e:
+        print(f"❌ Error: {e}")
